@@ -1,0 +1,97 @@
+<?php
+function civicrm_custom_validate_civicrm_validate($formName, &$fields, &$files, &$form) {
+
+	$errors = array();
+	if($formName == 'CRM_Profile_Form_Edit') {
+		$form_gid = $form->getVar( '_gid' );
+		
+		civicrm_initialize();
+		require_once('CRM/Core/DAO/UFGroup.php');
+		$UFGroup = new CRM_Core_DAO_UFGroup();
+		$query = sprintf("SELECT f.field_name as field_name, f.label as label
+			FROM civicrm_uf_field f
+			JOIN civicrm_uf_group g
+			ON f.uf_group_id = g.id
+			WHERE g.id = %d AND f.is_required = 1", $form_gid);
+		
+		$required_fields = array();
+		$UFGroup->query($query);
+		while($UFGroup->fetch()) {
+			$required_fields[$UFGroup->field_name] = $UFGroup->label; 
+		}
+		
+		// unset the administrative fields that we don't need to validate
+		unset(
+			$required_fields['postURL'], 
+			$required_fields['cancelURL'], 
+			$required_fields['_qf_default'], 
+			$required_fields['_qf_Edit_next']
+		);
+			
+		
+		foreach($fields as $field_name => $value) {
+			// #required fields
+			if(array_key_exists($field_name, $required_fields)) {
+				if(trim($fields[$field_name]) == '') {
+					$errors[$field_name] = $required_fields[$field_name] . ' is a required field.';
+				}
+			// #Optional Fields
+			} else {
+				// validate phone number for a number format and no dash or parenthesis
+				if(substr($field_name, 0, 5) == 'phone') {
+					if(isset($fields[$field_name]) && $fields[$field_name] != '') {
+						if(!is_numeric($fields[$field_name])) {
+							$errors[$field_name] = 'Phone number should only contain numbers, no () or - ';
+						}
+					}
+				}
+				// validate postal code (For US zip code)
+				if(substr($field_name, 0, 12) == 'postal_code-') {
+					if(isset($fields[$field_name]) && $fields[$field_name] != '') {
+						$postal_error = 0;
+						if(!is_numeric($fields[$field_name])) {
+							$postal_error += 1;
+						}
+						if(strlen($fields[$field_name]) > 5 || strlen($fields[$field_name]) < 5) {
+							$postal_error += 1;
+						}
+						if($postal_error > 0) {
+							$errors[$field_name] = 'Postal code should only contain 5 digit numbers';
+						}
+					}
+				}
+			
+			}
+		}
+		
+		// #File Field requirement fix
+		if(!empty($required_fields)) {
+			foreach($required_fields as $field_name => $label) {
+				// BUG FIX: required file fields not being required, here we will check to see
+				// if the $file array has error and if the file has not size
+				// file fields should all be custom
+				if(substr($field_name, 0, 6) == 'custom') {
+					// extract the custom field id
+					$custom_field_id = substr($field_name, strpos($field_name, '_') + 1);
+					// see if that field is indeed a file field
+					require_once('CRM/Core/DAO.php');
+					$data_type = CRM_Core_DAO::singleValueQuery(sprintf("SELECT data_type FROM civicrm_custom_field WHERE id = %d", $custom_field_id));
+					if($data_type == 'File') {
+						// check the file array
+						if(isset($files[$field_name])) {
+							// check file size and file error
+							if($files[$field_name]['error'] != 0 || $files[$field_name]['size'] == 0) {
+								$errors[$field_name] = $label . ' is a required file field, make sure you select a file to attach and the file is not empty';
+							}
+						}
+					}
+				}
+			}
+		}
+		
+	}
+	
+	// print_r($errors);
+	
+	return (empty($errors)) ? TRUE : $errors;
+}

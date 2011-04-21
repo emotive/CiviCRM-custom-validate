@@ -1,0 +1,8 @@
+; $Id$
+name = CiviCRM custom form validation
+description = Validates file field as well as provide custom validations
+package = CiviCRM
+core = 6.x
+version = "6.x-1.0"
+dependencies[] = civicrm
+project = "civicrm_custom_validation"
